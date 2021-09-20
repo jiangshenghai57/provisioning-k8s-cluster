@@ -1,0 +1,62 @@
+# playbook.yml:
+---
+- name: "Deploying infrastructure"
+  hosts: "{{ hosts | default('localhost')}}"
+  tasks:
+    - name: "Get current working directory"
+      shell: echo `cd .. && pwd`
+      register: cur_dir
+    - debug: var=cur_dir.stdout_lines
+
+    - name: "Provisioning localhost k8s cluster"
+      shell: "kind create cluster --config {{ cur_dir.stdout_lines[0] }}/kind-config.yaml --name my-cluster"
+      register: out
+      when: "create_local_cluster | default(false)"
+    - debug: var=out.stdout
+      when: "create_local_cluster | default(false)"
+    - debug: var=out.stderr
+      when: "create_local_cluster | default(false)"
+
+    - name: "Deploy infrastructure via Terraform"
+      shell: |
+        terraform -chdir={{ cur_dir.stdout_lines[0] }} init
+        terraform -chdir={{ cur_dir.stdout_lines[0] }} validate
+        terraform -chdir={{ cur_dir.stdout_lines[0] }} plan
+        terraform -chdir={{ cur_dir.stdout_lines[0] }} apply --auto-approve
+      register: out
+      when: "create_local_cluster | default(false)"
+    - debug: var=out.stdout
+      when: "create_local_cluster | default(false)"
+    - debug: var=out.stderr
+      when: "create_local_cluster | default(false)"
+
+    - name: "Create cluster-admin serviceaccount"
+      shell: |
+        kubectl create serviceaccount cluster-admin-dashboard-sa
+        kubectl create clusterrolebinding cluster-admin-dashboard-sa \
+          --clusterrole=cluster-admin \
+          --serviceaccount=default:cluster-admin-dashboard-sa
+        kubectl proxy &
+      when: "create_local_cluster | default(false)"
+    - debug: var=out.stderr
+      when: "create_local_cluster | default(false)"
+    - debug: var=out.stdout
+      when: "create_local_cluster | default(false)"
+
+    - name: "Destroying Terraform infrastructure"
+      shell: terraform -chdir={{ cur_dir.stdout_lines[0] }} destroy --auto-approve
+      register: out
+      when: "destroy_local_cluster | default(false)"
+    - debug: var=out.stdout
+      when: "destroy_local_cluster | default(false)"
+    - debug: var=out.stderr
+      when: "destroy_local_cluster | default(false)"
+
+    - name: "Destroying local k8s cluster"
+      shell: kind delete cluster --name my-cluster
+      register: out
+      when: "destroy_local_cluster | default(false)"
+    - debug: var=out.stdout
+      when: "destroy_local_cluster | default(false)"
+    - debug: var=out.stderr
+      when: "destroy_local_cluster | default(false)"
